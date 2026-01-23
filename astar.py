@@ -7,42 +7,25 @@ np.genfromtxt("./mapcik.txt")
 net = nx.read_edgelist("./mapcik.txt", edgetype=int)
 
 
-def astar(start=(1,3)):
+def astar(start=(1,3),goal=(12,10)):
     OPEN = []
 
-    heapq.heappush(OPEN,(0,start))
+    heapq.heappush(OPEN,(0,start,None))
 
     CLOSED = []
 
     while OPEN:
         q = heapq.heappop(OPEN)
-        u,v = q
 
-        Nu = np.fromiter(G.adj[u], dtype=np.int64)
-        Nv = np.fromiter(G.adj[v], dtype=np.int64)
-
-        A, B = np.meshgrid(Nu, Nv, indexing="ij")
-        pairs = np.column_stack((A.ravel(), B.ravel()))
-
-        for s in pairs:
+        for s in product(*([u, *G.adj[u]] for u in q[1])):
+            if s == goal:
+                pass
+                # TODO return
+            g = q[0]+1
+            h = None # TODO h
+            f = g+h
+            # TODO make skips
+            heapq.heappush(OPEN,(f,s,q)) # TODO check correctensy
+        
+        heapq.heappush(CLOSED,q)
             
-
-
-
-import networkx as nx
-from itertools import product, combinations
-
-G = nx.read_edgelist("data.txt", nodetype=int)
-
-nodes = [1, 2, 4] # N node
-
-CN = {u: {u, *G.adj[u]} for u in nodes}
-pair_products = {
-    (u, v): product(CN[u], CN[v])
-    for u, v in combinations(nodes, 2)
-}
-
-# örnek tüketim:
-u, v = 1, 2
-print(list(pair_products[(u, v)]))
-
