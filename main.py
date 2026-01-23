@@ -20,3 +20,5 @@ def highlevel():
     root - CTNode()
     
     heapq.heappush(root)
+
+highlevel()
