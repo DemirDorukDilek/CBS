@@ -17,7 +17,7 @@ class CTNode:
 def highlevel():
     OPEN = []
     
-    root - CTNode()
+    root = CTNode()
     
     heapq.heappush(root)
 
