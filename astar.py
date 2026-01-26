@@ -5,7 +5,7 @@ from itertools import product
 import os
 
 data = "./mapcik.txt"
-if os.path.isfile(data):
+if not os.path.isfile(data):
     mapcik = [
     (1, 2),
     (1, 4),
@@ -40,10 +40,19 @@ if os.path.isfile(data):
     (12, 9),
     (12, 11),
 ]
-    net = nx.Graph()
-    net.add_edges_from(data)
+    net = nx.DiGraph()
+    net.add_edges_from(mapcik)
 else:
     net = nx.read_edgelist("./mapcik.txt", edgetype=int, nodetype=int)
+
+
+def reverse_dijkstra(graph, goals):
+    rg = graph.reverse()
+    h_values = []
+    for goal in goals:
+        h_values.append(nx.single_source_shortest_path_lenght(rg,goal))
+    
+    return h_values
 
 
 
@@ -55,13 +64,18 @@ class Anode:
 
 def astar(net,start=(1,3),goal=(12,10),heuristic=None):
     OPEN = []
+    node = Anode(start,0,None)
+    OPENd = {start:node.cost}
+    heapq.heappush(OPEN,node)
 
-    heapq.heappush(OPEN,Anode(start,0,None))
+    CLOSED = {}
 
-    CLOSED = []
+    h_values = reverse_dijkstra(net,goal)
+    print(h_values)
 
     while OPEN:
         q = heapq.heappop(OPEN)
+        OPENd.pop(q.state)
         heapq.heappush(CLOSED,q)
         for s in product(*([u, *net.adj[u]] for u in q.state)):
             if s == goal:
@@ -74,8 +88,9 @@ def astar(net,start=(1,3),goal=(12,10),heuristic=None):
             g = q.cost+1
             h = heuristic(s,goal)
             f = g+h
-            # TODO make skips
-            heapq.heappush(OPEN,Anode(s,f,q)) # TODO check correctensy
+            n = Anode(s,f,q)
+            if OPENd.get(n.state,float("inf")) > n.cost and CLOSED.get(n.state,float("inf")) > n.cost:
+                heapq.heappush(OPEN,) # TODO check correctensy
   
 astar(net)
 # TODO make SIC
