@@ -2,9 +2,50 @@ import numpy as np
 import networkx as nx
 import heapq
 from itertools import product
-np.genfromtxt("./mapcik.txt")
+import os
 
-net = nx.read_edgelist("./mapcik.txt", edgetype=int, nodetype=int)
+data = "./mapcik.txt"
+if os.path.isfile(data):
+    mapcik = [
+    (1, 2),
+    (1, 4),
+    (2, 1),
+    (2, 5),
+    (3, 4),
+    (3, 7),
+    (4, 1),
+    (4, 3),
+    (4, 5),
+    (4, 8),
+    (5, 2),
+    (5, 4),
+    (5, 6),
+    (5, 9),
+    (6, 5),
+    (6, 10),
+    (7, 3),
+    (7, 8),
+    (8, 4),
+    (8, 7),
+    (8, 9),
+    (8, 11),
+    (9, 5),
+    (9, 8),
+    (9, 10),
+    (9, 12),
+    (10, 6),
+    (10, 9),
+    (11, 8),
+    (11, 12),
+    (12, 9),
+    (12, 11),
+]
+    net = nx.Graph()
+    net.add_edges_from(data)
+else:
+    net = nx.read_edgelist("./mapcik.txt", edgetype=int, nodetype=int)
+
+
 
 class Anode:
     def __init__(self,state,cost=None,parent=None):
