@@ -46,51 +46,81 @@ else:
     net = nx.read_edgelist("./mapcik.txt", edgetype=int, nodetype=int)
 
 
+class Anode:
+    __slots__ = ('state','f','g','parent')
+    def __init__(self,state,f=None,g=0,parent=None):
+        self.state=state
+        self.f=f
+        self.g = g
+        self.parent=parent
+    def __lt__(self,o):
+        return self.f<o.f
+    def __repr__(self):
+        return str(self.state)
+
+def get_successor(state,adj):
+    return product(*((u,)+tuple(adj[u]) for u in state))
+
+def MAPF_valid(os,ns):
+    return len(os) == len(set(ns)) and len(os) == len({frozenset(x) for x in zip(os,ns)})
+
+def is_goal(state,goal):
+    return state == goal
+
+def get_path(node,goal):
+    path = [goal]
+    while node:
+        path.append(node.state)
+        node = node.parent
+    path.reverse()
+    return path
+
+def astar(G,start=(1,3),goal=(12,10),heuristic=None,heuristic_precalculator=None):
+    # Local variable cache
+    heappush = heapq.heappush
+    heappop = heapq.heappop
+    adj = G.adj
+
+    OPEN = []
+    CLOSED = {}
+
+    node = Anode(start,0,0,None)
+    OPENd = {start:node.f}
+    heappush(OPEN,node)
+
+    if heuristic_precalculator:
+        h_values = heuristic_precalculator(G,goal)
+
+    while OPEN:
+        q = heappop(OPEN)
+        OPENd.pop(q.state)
+
+        if is_goal(q.state,goal):return get_path(q,goal)
+        if q.state in CLOSED: continue
+        CLOSED[q.state] = q.f
+
+        for s in get_successor(q.state,adj):
+            if not MAPF_valid(q.state,s): continue
+
+            g = q.g+1
+            h = heuristic(s,h_values)
+            f = g+h
+
+            n = Anode(s,f,g,q)
+            if OPENd.get(n.state,float("inf")) > n.f and CLOSED.get(n.state,float("inf")) > n.f:
+                heappush(OPEN,n)
+                OPENd[n.state] = n.f
+
 def reverse_dijkstra(graph, goals):
     rg = graph.reverse()
     h_values = []
     for goal in goals:
-        h_values.append(nx.single_source_shortest_path_lenght(rg,goal))
+        h_values.append(nx.single_source_shortest_path_length(rg,goal))
     
     return h_values
+def SIC(state,h_values):
+    return sum([h_values[aidx][x] for aidx,x in enumerate(state)])
 
 
 
-class Anode:
-    def __init__(self,state,cost=None,parent=None):
-        self.state=state
-        self.cost=cost
-        self.parent=parent
-
-def astar(net,start=(1,3),goal=(12,10),heuristic=None):
-    OPEN = []
-    node = Anode(start,0,None)
-    OPENd = {start:node.cost}
-    heapq.heappush(OPEN,node)
-
-    CLOSED = {}
-
-    h_values = reverse_dijkstra(net,goal)
-    print(h_values)
-
-    while OPEN:
-        q = heapq.heappop(OPEN)
-        OPENd.pop(q.state)
-        heapq.heappush(CLOSED,q)
-        for s in product(*([u, *net.adj[u]] for u in q.state)):
-            if s == goal:
-                ptr = q
-                path = [goal]
-                while ptr:
-                    path.append(ptr.state)
-                    ptr = ptr.parent
-                return path.reverse()
-            g = q.cost+1
-            h = heuristic(s,goal)
-            f = g+h
-            n = Anode(s,f,q)
-            if OPENd.get(n.state,float("inf")) > n.cost and CLOSED.get(n.state,float("inf")) > n.cost:
-                heapq.heappush(OPEN,) # TODO check correctensy
-  
-astar(net)
-# TODO make SIC
+print(astar(net,heuristic=SIC,heuristic_precalculator=reverse_dijkstra))
