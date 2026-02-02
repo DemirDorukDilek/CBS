@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Graph Editor</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #111120;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding: 20px;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  #wrap {
+    background: #1a1a2e;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 6px 32px rgba(0,0,0,0.5);
+    width: 100%;
+    max-width: 1040px;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* ── Top bar ── */
+  #bar {
+    background: #16213e;
+    padding: 10px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    border-bottom: 1px solid #0f3460;
+  }
+  #bar .title {
+    color: #e0e0e0;
+    font-size: 16px;
+    font-weight: 700;
+    margin-right: 12px;
+  }
+  #bar button {
+    background: #0f3460;
+    color: #c8d0e0;
+    border: 1px solid #1a4a80;
+    padding: 5px 13px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  #bar button:hover { background: #e94560; border-color: #e94560; color: #fff; }
+  #bar button.pri { background: #e94560; border-color: #e94560; color: #fff; font-weight: 600; }
+  #bar button.pri:hover { background: #c73550; }
+  #bar button.active { background: #28a745; border-color: #28a745; color: #fff; font-weight: 600; }
+  #bar button.active:hover { background: #1e8c38; }
+  #bar button.bidir { background: #7c3aed; border-color: #7c3aed; color: #fff; font-weight: 600; }
+  #bar button.bidir:hover { background: #6328c4; }
+  #btn-edge { min-width: 130px; text-align: center; }
+  #btn-sg { min-width: 155px; text-align: center; }
+  .sep { width: 1px; height: 24px; background: #0f3460; margin: 0 4px; }
+
+  /* ── Canvas ── */
+  #cvs { display: block; cursor: crosshair; }
+
+  /* ── Help bar ── */
+  #help {
+    background: #16213e;
+    color: #5a6a85;
+    padding: 6px 16px;
+    font-size: 11px;
+    border-top: 1px solid #0f3460;
+    line-height: 1.5;
+  }
+
+  /* ── Footer ── */
+  #foot {
+    background: #111827;
+    color: #5a6a85;
+    padding: 7px 16px;
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  #foot .mode { font-weight: 600; }
+
+  /* ── Start/Goal pairs list ── */
+  #sg-panel {
+    background: #16213e;
+    border-top: 1px solid #0f3460;
+    padding: 8px 16px;
+    display: none;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+  #sg-panel .sg-title { color: #8a95aa; font-size: 11px; font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  #sg-panel .pair {
+    display: inline-flex;
+    align-items: center;
+    background: #0f3460;
+    color: #c8d0e0;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    margin: 2px 4px 2px 0;
+    gap: 6px;
+  }
+  #sg-panel .pair .s { color: #4ade80; font-weight: 700; }
+  #sg-panel .pair .g { color: #f87171; font-weight: 700; }
+  #sg-panel .pair .del {
+    cursor: pointer;
+    color: #777;
+    font-size: 14px;
+    line-height: 1;
+  }
+  #sg-panel .pair .del:hover { color: #e94560; }
+</style>
+</head>
+<body>
+
+<div id="wrap">
+  <div id="bar">
+    <span class="title">⬡ Graph Editor</span>
+    <button class="pri" onclick="doDownload()">⬇ Download JSON</button>
+    <button onclick="doDownloadEdgelist()">⬇ Edge List Only</button>
+    <div class="sep"></div>
+    <button id="btn-edge" onclick="toggleEdgeMode()">🔗 Directed</button>
+    <button id="btn-sg" onclick="toggleSGMode()">🎯 Start/Goal: OFF</button>
+    <div class="sep"></div>
+    <button onclick="doUndo()">↩ Undo</button>
+    <button onclick="doClear()">🗑 Clear</button>
+    <button onclick="doAddNode()">+ Node</button>
+    <button onclick="doAddEdge()">+ Edge</button>
+  </div>
+
+  <canvas id="cvs" width="1000" height="540"></canvas>
+
+  <div id="sg-panel">
+    <div class="sg-title">Start / Goal Pairs</div>
+    <div id="sg-list"></div>
+  </div>
+
+  <div id="help"></div>
+
+  <div id="foot">
+    <span id="st">Nodes: 0 │ Edges: 0</span>
+    <span id="md" class="mode"></span>
+  </div>
+</div>
+
+<script>
+(function() {
+  // ── Canvas setup ──
+  var cvs = document.getElementById("cvs");
+  var ctx = cvs.getContext("2d");
+  var wrap = document.getElementById("wrap");
+
+  function resizeCanvas() {
+    var w = Math.min(wrap.clientWidth, 1040);
+    cvs.width = w;
+  }
+  resizeCanvas();
+  window.addEventListener("resize", function() { resizeCanvas(); draw(); });
+
+  // ── Constants ──
+  var R = 24;
+  var BG = "#1e1e2e", GRID = "#252540";
+  var NCOL = "#4a90d9", NSEL = "#e8943a", NSTROKE = "#fff";
+  var START_COL = "#4ade80", GOAL_COL = "#f87171";
+  var ECOL = "#6a7a95", EARR = "#6a7a95", PREVIEW = "#e8943a";
+  var UNDIRECTED_COL = "#b080e0";
+
+  // ── State ──
+  var nodes = {};       // id -> {x, y}
+  var edges = [];       // [{s, t}]
+  var nextId = 0;
+  var sel = null;
+  var dragInfo = null;
+  var isDragging = false;
+  var mouseDownPos = null;
+  var mx = 0, my = 0;
+  var undoStack = [];
+  var DRAG_THRESH = 5;
+
+  // Edge mode: "directed" or "bidir"
+  // SG mode: independent toggle (on/off). When on, overrides edge interaction.
+  var edgeMode = "directed";  // "directed" | "bidir"
+  var sgMode = false;
+  var sgPairs = [];     // [{start: int, goal: int}]
+  var sgSel = null;     // first node selected in SG mode (the start candidate)
+
+  // Derived: what interaction mode is active?
+  function activeMode() { return sgMode ? "sg" : edgeMode; }
+
+  // ── Help text ──
+  function updateHelp() {
+    var el = document.getElementById("help");
+    var m = activeMode();
+    if (m === "sg") {
+      el.textContent = "🎯 START/GOAL MODE │ Click 1st node = Start (green) │ Click 2nd node = Goal (red) │ Right click pair marker: remove │ Esc: deselect";
+    } else if (m === "bidir") {
+      el.textContent = "↔ BIDIRECTIONAL MODE │ Click node → node: toggle undirected (both directions) │ Left click empty: add node │ Right click: delete │ Drag: move";
+    } else {
+      el.textContent = "🔗 DIRECTED EDGE MODE │ Click node → node: toggle directed edge │ Left click empty: add node │ Right click: delete │ Drag: move │ Ctrl+Z: undo";
+    }
+  }
+  updateHelp();
+
+  // ── Helpers ──
+  function nodeIds() { return Object.keys(nodes).map(Number); }
+
+  function hasEdge(s, t) {
+    for (var i = 0; i < edges.length; i++)
+      if (edges[i].s === s && edges[i].t === t) return true;
+    return false;
+  }
+
+  function isBidirectional(s, t) {
+    return hasEdge(s, t) && hasEdge(t, s);
+  }
+
+  function removeEdge(s, t) {
+    for (var i = edges.length - 1; i >= 0; i--)
+      if (edges[i].s === s && edges[i].t === t) { edges.splice(i, 1); return true; }
+    return false;
+  }
+
+  function nodeAt(x, y) {
+    var ids = nodeIds();
+    for (var i = ids.length - 1; i >= 0; i--) {
+      var id = ids[i], n = nodes[id];
+      if (Math.hypot(n.x - x, n.y - y) <= R + 4) return id;
+    }
+    return null;
+  }
+
+  function edgeAt(x, y) {
+    for (var i = 0; i < edges.length; i++) {
+      var e = edges[i];
+      var sn = nodes[e.s], tn = nodes[e.t];
+      if (!sn || !tn) continue;
+      if (e.s === e.t) {
+        var lr = R * 1.3, cy = sn.y - R - lr;
+        if (Math.abs(Math.hypot(x - sn.x, y - cy) - lr) < 10) return i;
+        continue;
+      }
+      if (ptSegDist(x, y, sn.x, sn.y, tn.x, tn.y) < 10) return i;
+    }
+    return -1;
+  }
+
+  function ptSegDist(px, py, x1, y1, x2, y2) {
+    var dx = x2 - x1, dy = y2 - y1;
+    if (dx === 0 && dy === 0) return Math.hypot(px - x1, py - y1);
+    var t = Math.max(0, Math.min(1, ((px-x1)*dx + (py-y1)*dy) / (dx*dx + dy*dy)));
+    return Math.hypot(px - (x1 + t*dx), py - (y1 + t*dy));
+  }
+
+  function getPos(e) {
+    var rect = cvs.getBoundingClientRect();
+    return [e.clientX - rect.left, e.clientY - rect.top];
+  }
+
+  // ── SG Helpers ──
+  function getNodeSGRole(nid) {
+    // Returns: {starts: [pairIdx...], goals: [pairIdx...]}
+    var res = {starts: [], goals: []};
+    for (var i = 0; i < sgPairs.length; i++) {
+      if (sgPairs[i].start === nid) res.starts.push(i);
+      if (sgPairs[i].goal === nid) res.goals.push(i);
+    }
+    return res;
+  }
+
+  function renderSGPanel() {
+    var panel = document.getElementById("sg-panel");
+    var list = document.getElementById("sg-list");
+    panel.style.display = sgPairs.length > 0 || sgMode ? "block" : "none";
+    list.innerHTML = "";
+    for (var i = 0; i < sgPairs.length; i++) {
+      var p = sgPairs[i];
+      var div = document.createElement("span");
+      div.className = "pair";
+      div.innerHTML = '<span class="s">S:' + p.start + '</span> → <span class="g">G:' + p.goal + '</span> <span class="del" data-idx="' + i + '">✕</span>';
+      list.appendChild(div);
+    }
+    list.querySelectorAll(".del").forEach(function(el) {
+      el.addEventListener("click", function(e) {
+        e.stopPropagation();
+        var idx = parseInt(this.getAttribute("data-idx"));
+        pushUndo();
+        sgPairs.splice(idx, 1);
+        renderSGPanel();
+        draw();
+      });
+    });
+  }
+
+  // ── Undo ──
+  function pushUndo() {
+    var nc = {};
+    for (var k in nodes) nc[k] = {x: nodes[k].x, y: nodes[k].y};
+    var ec = edges.map(function(e) { return {s: e.s, t: e.t}; });
+    var sgc = sgPairs.map(function(p) { return {start: p.start, goal: p.goal}; });
+    undoStack.push({nodes: nc, edges: ec, nextId: nextId, sgPairs: sgc, sel: sel, sgSel: sgSel});
+    if (undoStack.length > 50) undoStack.shift();
+  }
+
+  // ── Drawing ──
+  function draw() {
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, cvs.width, cvs.height);
+    drawGrid();
+
+    // Collect bidirectional pairs to avoid drawing twice
+    var bidrawn = {};
+
+    for (var i = 0; i < edges.length; i++) {
+      var e = edges[i];
+      var key1 = Math.min(e.s, e.t) + "," + Math.max(e.s, e.t);
+      if (e.s !== e.t && isBidirectional(e.s, e.t)) {
+        if (bidrawn[key1]) continue;
+        bidrawn[key1] = true;
+        drawUndirectedEdge(e.s, e.t);
+      } else {
+        drawEdge(e);
+      }
+    }
+
+    // Preview line
+    var am = activeMode();
+    if ((sel !== null && (am === "directed" || am === "bidir") && !isDragging && nodes[sel]) ||
+        (sgSel !== null && am === "sg" && !isDragging && nodes[sgSel])) {
+      var srcId = am === "sg" ? sgSel : sel;
+      var previewCol = am === "sg" ? GOAL_COL : (am === "bidir" ? UNDIRECTED_COL : PREVIEW);
+      ctx.save();
+      ctx.strokeStyle = previewCol;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 5]);
+      ctx.beginPath();
+      ctx.moveTo(nodes[srcId].x, nodes[srcId].y);
+      ctx.lineTo(mx, my);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    var ids = nodeIds();
+    for (var i = 0; i < ids.length; i++) drawNode(ids[i]);
+    updateStatus();
+    renderSGPanel();
+  }
+
+  function drawGrid() {
+    ctx.strokeStyle = GRID;
+    ctx.lineWidth = 0.5;
+    for (var x = 0; x < cvs.width; x += 40) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, cvs.height); ctx.stroke();
+    }
+    for (var y = 0; y < cvs.height; y += 40) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cvs.width, y); ctx.stroke();
+    }
+  }
+
+  function drawNode(id) {
+    var n = nodes[id];
+    if (!n) return;
+    var am = activeMode();
+    var isSel = (id === sel && (am === "directed" || am === "bidir")) || (id === sgSel && am === "sg");
+    var role = getNodeSGRole(id);
+    var isStart = role.starts.length > 0;
+    var isGoal = role.goals.length > 0;
+
+    // Shadow
+    ctx.beginPath();
+    ctx.arc(n.x + 2, n.y + 3, R, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.fill();
+
+    // SG outer rings
+    if (isStart && isGoal) {
+      // Half green, half red
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, R + 7, -Math.PI / 2, Math.PI / 2);
+      ctx.strokeStyle = START_COL;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, R + 7, Math.PI / 2, Math.PI * 1.5);
+      ctx.strokeStyle = GOAL_COL;
+      ctx.stroke();
+    } else if (isStart) {
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, R + 7, 0, Math.PI * 2);
+      ctx.strokeStyle = START_COL;
+      ctx.lineWidth = 4;
+      ctx.stroke();
+    } else if (isGoal) {
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, R + 7, 0, Math.PI * 2);
+      ctx.strokeStyle = GOAL_COL;
+      ctx.lineWidth = 4;
+      ctx.stroke();
+    }
+
+    // Selection glow
+    if (isSel) {
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, R + (isStart || isGoal ? 12 : 7), 0, Math.PI * 2);
+      ctx.strokeStyle = am === "sg" ? "rgba(74,222,128,0.4)" : (am === "bidir" ? "rgba(176,128,224,0.4)" : "rgba(232,148,58,0.35)");
+      ctx.lineWidth = 4;
+      ctx.stroke();
+    }
+
+    // Main circle
+    var col = isSel ? (am === "sg" ? START_COL : (am === "bidir" ? UNDIRECTED_COL : NSEL)) : NCOL;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, R, 0, Math.PI * 2);
+    ctx.fillStyle = col;
+    ctx.fill();
+    ctx.strokeStyle = NSTROKE;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 14px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(id), n.x, n.y + 1);
+
+    // SG badge labels
+    if (isStart) {
+      drawBadge(n.x - R - 4, n.y - R - 4, "S", START_COL);
+    }
+    if (isGoal) {
+      drawBadge(n.x + R - 6, n.y - R - 4, "G", GOAL_COL);
+    }
+  }
+
+  function drawBadge(x, y, text, col) {
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(x, y, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#000";
+    ctx.font = "bold 10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x, y + 0.5);
+  }
+
+  function drawEdge(e) {
+    var sn = nodes[e.s], tn = nodes[e.t];
+    if (!sn || !tn) return;
+    if (e.s === e.t) { drawLoop(e.s, sn); return; }
+
+    var dx = tn.x - sn.x, dy = tn.y - sn.y;
+    var d = Math.hypot(dx, dy);
+    if (d < 1) return;
+    var ux = dx/d, uy = dy/d;
+
+    var sx = sn.x + ux * R;
+    var sy = sn.y + uy * R;
+    var ex = tn.x - ux * R;
+    var ey = tn.y - uy * R;
+
+    ctx.strokeStyle = ECOL;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+
+    ctx.fillStyle = EARR;
+    drawArrow(ex, ey, dx, dy, 11);
+  }
+
+  function drawUndirectedEdge(a, b) {
+    var an = nodes[a], bn = nodes[b];
+    if (!an || !bn) return;
+
+    var dx = bn.x - an.x, dy = bn.y - an.y;
+    var d = Math.hypot(dx, dy);
+    if (d < 1) return;
+    var ux = dx/d, uy = dy/d;
+
+    var sx = an.x + ux * R;
+    var sy = an.y + uy * R;
+    var ex = bn.x - ux * R;
+    var ey = bn.y - uy * R;
+
+    // Thicker, different color, no arrow
+    ctx.strokeStyle = UNDIRECTED_COL;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+
+    // Small "↔" label at midpoint
+    var midx = (sx + ex) / 2, midy = (sy + ey) / 2;
+    ctx.fillStyle = UNDIRECTED_COL;
+    ctx.font = "bold 14px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    // offset perpendicular
+    var px = -uy, py = ux;
+    ctx.fillText("↔", midx + px * 14, midy + py * 14);
+  }
+
+  function drawLoop(id, n) {
+    var lr = R * 1.3;
+    var cy = n.y - R - lr;
+    ctx.strokeStyle = ECOL;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(n.x, cy, lr, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = EARR;
+    drawArrow(n.x + R * 0.35, n.y - R + 2, 1, 1, 8);
+  }
+
+  function drawArrow(x, y, dx, dy, size) {
+    var d = Math.hypot(dx, dy);
+    if (d < 0.5) return;
+    var ux = dx/d, uy = dy/d;
+    var px = -uy, py = ux;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - ux*size + px*size*0.38, y - uy*size + py*size*0.38);
+    ctx.lineTo(x - ux*size - px*size*0.38, y - uy*size - py*size*0.38);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function updateStatus() {
+    var nc = nodeIds().length, ec = edges.length;
+    var sgc = sgPairs.length;
+    document.getElementById("st").textContent =
+      "Nodes: " + nc + " │ Edges: " + ec + " │ Pairs: " + sgc;
+    var md = document.getElementById("md");
+    var am = activeMode();
+    if (am === "sg") {
+      if (sgSel !== null) {
+        md.textContent = "🎯 Start/Goal │ Start: " + sgSel + " → select Goal";
+        md.style.color = GOAL_COL;
+      } else {
+        md.textContent = "🎯 Start/Goal │ select Start node";
+        md.style.color = START_COL;
+      }
+    } else if (am === "bidir") {
+      if (sel !== null) {
+        md.textContent = "↔ Bidirectional │ " + sel + " ↔ ?";
+        md.style.color = UNDIRECTED_COL;
+      } else {
+        md.textContent = "↔ Bidirectional Edge Mode";
+        md.style.color = "#b080e0";
+      }
+    } else {
+      if (sel !== null) {
+        md.textContent = "🔗 Directed │ " + sel + " → ?";
+        md.style.color = "#e8943a";
+      } else {
+        md.textContent = "🔗 Directed Edge Mode";
+        md.style.color = "#5a6a85";
+      }
+    }
+  }
+
+  // ── Events ──
+  cvs.addEventListener("mousedown", function(ev) {
+    var pos = getPos(ev);
+    var x = pos[0], y = pos[1];
+
+    // Right click: delete
+    if (ev.button === 2) {
+      var nid = nodeAt(x, y);
+      if (nid !== null) {
+        pushUndo();
+        delete nodes[nid];
+        for (var i = edges.length - 1; i >= 0; i--)
+          if (edges[i].s === nid || edges[i].t === nid) edges.splice(i, 1);
+        // Remove SG pairs involving this node
+        for (var i = sgPairs.length - 1; i >= 0; i--)
+          if (sgPairs[i].start === nid || sgPairs[i].goal === nid) sgPairs.splice(i, 1);
+        if (sel === nid) sel = null;
+        if (sgSel === nid) sgSel = null;
+        draw();
+        return;
+      }
+      var eidx = edgeAt(x, y);
+      if (eidx >= 0) {
+        pushUndo();
+        edges.splice(eidx, 1);
+        draw();
+        return;
+      }
+      sel = null; sgSel = null;
+      draw();
+      return;
+    }
+
+    if (ev.button !== 0) return;
+    mouseDownPos = {x: x, y: y};
+    isDragging = false;
+
+    var nid = nodeAt(x, y);
+    if (nid !== null) {
+      var n = nodes[nid];
+      dragInfo = {id: nid, ox: n.x - x, oy: n.y - y};
+    } else {
+      dragInfo = null;
+    }
+  });
+
+  cvs.addEventListener("mousemove", function(ev) {
+    var pos = getPos(ev);
+    mx = pos[0]; my = pos[1];
+    if (mouseDownPos && !isDragging) {
+      if (Math.hypot(mx - mouseDownPos.x, my - mouseDownPos.y) > DRAG_THRESH) isDragging = true;
+    }
+    if (isDragging && dragInfo) {
+      nodes[dragInfo.id].x = mx + dragInfo.ox;
+      nodes[dragInfo.id].y = my + dragInfo.oy;
+    }
+    draw();
+  });
+
+  cvs.addEventListener("mouseup", function(ev) {
+    if (ev.button !== 0) return;
+    var pos = getPos(ev);
+    var x = pos[0], y = pos[1];
+
+    if (!isDragging) {
+      var nid = nodeAt(x, y);
+
+      var am = activeMode();
+
+      if (am === "sg") {
+        // ── Start/Goal mode ──
+        if (nid !== null) {
+          if (sgSel === null) {
+            sgSel = nid;
+          } else if (sgSel === nid) {
+            sgSel = null; // deselect
+          } else {
+            pushUndo();
+            sgPairs.push({start: sgSel, goal: nid});
+            sgSel = null;
+          }
+        } else {
+          if (sgSel !== null) {
+            sgSel = null;
+          } else {
+            // Add node in SG mode too
+            pushUndo();
+            var id = nextId++;
+            nodes[id] = {x: x, y: y};
+          }
+        }
+      } else if (am === "bidir") {
+        // ── Bidirectional edge mode ──
+        if (nid !== null) {
+          if (sel === null) {
+            sel = nid;
+          } else if (sel === nid) {
+            sel = null; // deselect
+          } else {
+            pushUndo();
+            var a = sel, b = nid;
+            var abExists = hasEdge(a, b);
+            var baExists = hasEdge(b, a);
+            if (abExists && baExists) {
+              // Both exist → remove both
+              removeEdge(a, b);
+              removeEdge(b, a);
+            } else {
+              // Add whichever is missing
+              if (!abExists) edges.push({s: a, t: b});
+              if (!baExists) edges.push({s: b, t: a});
+            }
+            sel = null;
+          }
+        } else {
+          if (sel !== null) {
+            sel = null;
+          } else {
+            pushUndo();
+            var id = nextId++;
+            nodes[id] = {x: x, y: y};
+          }
+        }
+      } else {
+        // ── Edge mode ──
+        if (nid !== null) {
+          if (sel === null) {
+            sel = nid;
+          } else if (sel === nid) {
+            sel = null; // deselect
+          } else {
+            pushUndo();
+            if (hasEdge(sel, nid)) {
+              // Toggle: remove existing edge
+              removeEdge(sel, nid);
+            } else {
+              edges.push({s: sel, t: nid});
+            }
+            sel = null;
+          }
+        } else {
+          if (sel !== null) {
+            sel = null;
+          } else {
+            pushUndo();
+            var id = nextId++;
+            nodes[id] = {x: x, y: y};
+          }
+        }
+      }
+    }
+
+    mouseDownPos = null;
+    dragInfo = null;
+    isDragging = false;
+    draw();
+  });
+
+  cvs.addEventListener("contextmenu", function(ev) { ev.preventDefault(); });
+
+  document.addEventListener("keydown", function(ev) {
+    if ((ev.ctrlKey || ev.metaKey) && ev.key === "z") { ev.preventDefault(); doUndo(); }
+    if (ev.key === "Escape") { sel = null; sgSel = null; draw(); }
+  });
+
+  // ── Button handlers ──
+  function updateButtons() {
+    var btnEdge = document.getElementById("btn-edge");
+    var btnSG = document.getElementById("btn-sg");
+
+    if (edgeMode === "bidir") {
+      btnEdge.textContent = "↔ Bidirectional";
+      btnEdge.className = "bidir";
+    } else {
+      btnEdge.textContent = "🔗 Directed";
+      btnEdge.className = "";
+    }
+
+    if (sgMode) {
+      btnSG.textContent = "🎯 Start/Goal: ON";
+      btnSG.className = "active";
+    } else {
+      btnSG.textContent = "🎯 Start/Goal: OFF";
+      btnSG.className = "";
+    }
+  }
+
+  window.toggleEdgeMode = function() {
+    if (edgeMode === "directed") {
+      edgeMode = "bidir";
+    } else {
+      edgeMode = "directed";
+    }
+    sel = null;
+    updateButtons();
+    updateHelp();
+    draw();
+  };
+
+  window.toggleSGMode = function() {
+    sgMode = !sgMode;
+    if (sgMode) {
+      sel = null;       // clear edge selection when entering SG
+    } else {
+      sgSel = null;     // clear SG selection when leaving SG
+    }
+    updateButtons();
+    updateHelp();
+    draw();
+  };
+
+  window.doUndo = function() {
+    if (!undoStack.length) return;
+    var s = undoStack.pop();
+    nodes = s.nodes;
+    edges = s.edges;
+    nextId = s.nextId;
+    sgPairs = s.sgPairs;
+    sel = null;
+    sgSel = null;
+    draw();
+  };
+
+  window.doClear = function() {
+    if (!nodeIds().length && !edges.length && !sgPairs.length) return;
+    if (!confirm("Clear the entire graph and all Start/Goal pairs?")) return;
+    pushUndo();
+    nodes = {}; edges = []; sgPairs = [];
+    nextId = 0; sel = null; sgSel = null;
+    draw();
+  };
+
+  window.doAddNode = function() {
+    var raw = prompt("Enter node ID (integer):");
+    if (raw === null) return;
+    var id = parseInt(raw, 10);
+    if (isNaN(id)) { alert("Invalid integer."); return; }
+    if (nodes[id]) { alert("Node " + id + " already exists!"); return; }
+    pushUndo();
+    nodes[id] = {x: cvs.width/2 + (Math.random()-0.5)*100, y: cvs.height/2 + (Math.random()-0.5)*100};
+    if (id >= nextId) nextId = id + 1;
+    draw();
+  };
+
+  window.doAddEdge = function() {
+    var rs = prompt("Node A ID:");
+    if (rs === null) return;
+    var s = parseInt(rs, 10);
+    if (isNaN(s)) { alert("Invalid."); return; }
+    var rt = prompt("Node B ID:");
+    if (rt === null) return;
+    var t = parseInt(rt, 10);
+    if (isNaN(t)) { alert("Invalid."); return; }
+    pushUndo();
+    if (!nodes[s]) { nodes[s] = {x: cvs.width/2-60, y: cvs.height/2}; if (s>=nextId) nextId=s+1; }
+    if (!nodes[t]) { nodes[t] = {x: cvs.width/2+60, y: cvs.height/2}; if (t>=nextId) nextId=t+1; }
+    if (edgeMode === "bidir") {
+      var ab = hasEdge(s, t), ba = hasEdge(t, s);
+      if (ab && ba) {
+        removeEdge(s, t); removeEdge(t, s);
+      } else {
+        if (!ab) edges.push({s: s, t: t});
+        if (!ba) edges.push({s: t, t: s});
+      }
+    } else {
+      if (hasEdge(s, t)) {
+        removeEdge(s, t);
+      } else {
+        edges.push({s: s, t: t});
+      }
+    }
+    draw();
+  };
+
+  window.doDownload = function() {
+    var edgeArr = edges.map(function(e) { return [e.s, e.t]; });
+    var starts = sgPairs.map(function(p) { return p.start; });
+    var goals = sgPairs.map(function(p) { return p.goal; });
+
+    var data = {
+      edges: edgeArr,
+      start: starts,
+      goal: goals
+    };
+
+    var json = JSON.stringify(data, null, 2);
+    downloadFile(json, "graph.json", "application/json");
+  };
+
+  window.doDownloadEdgelist = function() {
+    var lines = "";
+    for (var i = 0; i < edges.length; i++)
+      lines += edges[i].s + " " + edges[i].t + "\n";
+    downloadFile(lines, "graph.edgelist", "text/plain");
+  };
+
+  function downloadFile(content, filename, mime) {
+    var blob = new Blob([content], {type: mime});
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }
+
+  // Initial draw
+  draw();
+})();
+</script>
+</body>
+</html>
