@@ -5,6 +5,8 @@ from itertools import product
 import os
 from graphviz import Digraph
 import uuid
+import json
+import time
 
 mapcik = [
 (1, 2),
@@ -75,13 +77,20 @@ mapcik21 = [
 (32,50),
 (50,35),
 ],(10,20,30),(15,25,35)
-mapa,START,END = mapcik2
+mapa,START,END = mapcik21
+with open("graph.json","r") as f:
+    x = json.load(f)
+    mapa,START,END = x["edges"],x["start"],x["goal"]
+START = START[0],START[1],START[3],START[6],START[5],START[2]
+END = END[0],END[1],END[3],END[6],END[5],END[2]
+# START = START[2],START[3],START[5]
+# END = END[2],END[3],END[5]
+
+# START = START[0],START[4],START[2]
+# END = END[0],END[4],END[2]
+
 net = nx.DiGraph()
 net.add_edges_from(mapa)
-
-
-
-
 
 
 class Anode:
@@ -95,7 +104,7 @@ class Anode:
     def __lt__(self,o):
         return self.f<o.f
     def __repr__(self):
-        return str(self.state)
+        return str((self.state,self.f,self.g))
 
 def get_successor(state,adj):
     return product(*((u,)+tuple(adj[u]) for u in state))
@@ -128,8 +137,9 @@ def reverse_dijkstra(graph, goals):
 def SIC(state,h_values):
     return sum([h_values[aidx][x] if x in h_values[aidx] else float("inf") for aidx,x in enumerate(state)])
 
-def astar(G,start=(1,3),goal=(12,10),heuristic=None,heuristic_precalculator=None,constraint=None,agent=None):
+def astar(G,start=(1,3),goal=(12,10),end_time=None,heuristic=None,heuristic_precalculator=None,constraint=None,agent=None):
     # Local variable cache
+    # print(constraint)
     heappush = heapq.heappush
     heappop = heapq.heappop
     adj = G.adj
@@ -144,50 +154,68 @@ def astar(G,start=(1,3),goal=(12,10),heuristic=None,heuristic_precalculator=None
     OPENd = {(start,node.time):node.f}
     heappush(OPEN,node)
 
+
     while OPEN:
         q = heappop(OPEN)
         OPENd.pop((q.state,q.time))
 
-        if is_goal(q.state,goal):return get_path(q)
+        if is_goal(q.state,goal):
+            # print("end")
+            if end_time==None or q.time >= end_time:
+                return get_path(q)
         if (q.state,q.time) in CLOSED: continue
         CLOSED[(q.state,q.time)] = q.f
+        # print(q, q.parent)
         for s in get_successor(q.state,adj):
-            if not MAPF_valid(q.state,s): continue
+            if (s,q.time+1) in CLOSED: continue
+            if not MAPF_valid(q.state,s):
+                # print(q.state,s, "AAAAAAAAAAAAAAA")
+                continue
             invalid = False
             for idx in range(len(agent)):
                 if constraint:
                     print
                 for cagent in constraint.get((s[idx],q.time+1),set()):
-                    if agent[idx] in cagent:
+                    if agent[idx] in cagent.agent:
+                        # print(cagent,s[idx],q.time+1)
                         invalid = True
                         break
+                if invalid:
+                    break
                 for cagent in constraint.get((frozenset((q.state[idx],s[idx])),q.time+1),set()):
-                    if agent[idx] in cagent:
+                    if agent[idx] in cagent.agent:
+                        # print(cagent,s[idx],q.time+1)
                         invalid = True
                         break
+                if invalid:
+                    break
             if invalid:
                 continue
 
-            g = q.g+1
-            h = heuristic(s,h_values)
-            f = g+h
+            n = Anode(s,0,q.g,q,q.time+1)
 
-            n = Anode(s,f,g,q,q.time+1)
-            if OPENd.get((n.state,n.time),float("inf")) > n.f:
+            n.g += sum(1 for i in range(len(start)) if not (q.state[i] == goal[i] and s[i] == goal[i]))
+
+            h = heuristic(s,h_values)
+            n.f = n.g+h
+
+            if OPENd.get((n.state,n.time),float("inf")) > n.f and (n.state,n.time) not in CLOSED:
                 heappush(OPEN,n)
                 OPENd[(n.state,n.time)] = n.f
-                
-                
-                
-                
-                
-                
+
+    # print("end")
+
+
+
+
+
 class CTNode:
-    def __init__(self,cost = None,con = None,vertexlist = None,edgelist = None, parent = None):
+    def __init__(self,cost = None,con = None,vertexlist = None,edgelist = None, parent = None,index=None):
         self.cost = cost
         self.con = con
         self.vertexlist = vertexlist
         self.edgelist = edgelist
+        self.agentindex = index
         self.parent = None
         self.children = []
         self.uuid = str(uuid.uuid1())
@@ -197,11 +225,20 @@ class CTNode:
         self.con = {}
         self.vertexlist = []
         self.edgelist = []
+        self.agentindex = {}
+
+    def end_time(self):
+        return max(len(i) for i in self.vertexlist)-1
 
     def branch(self,new_con):
         con = self.con.copy()
-        con[new_con[1:]] = self.con.get(new_con[1:],set()).union(set((new_con[0],)))
-        node = CTNode(self.cost,con,self.vertexlist.copy(),self.edgelist.copy(), self)
+        old = len(self.con.get(new_con.state,set()))
+        con[new_con.state] = self.con.get(new_con.state,set()).union(set((new_con,)))
+        if old == len(con[new_con.state]):
+            print(self)
+            print(new_con,new_con.state)
+            raise Exception("Duplicate Con")
+        node = CTNode(self.cost,con,self.vertexlist.copy(),self.edgelist.copy(), self,self.agentindex.copy())
         return node
 
     def __repr__(self):
@@ -240,12 +277,12 @@ class CTNode:
 
 
 class Metaagent:
-    
+
     def __init__(self,inital,start,goal):
         self.agent = inital
         self.start = start
         self.goal = goal
-    
+
     def __contains__(self,o):
         if type(o) == Metaagent:
             for i in o.agent:
@@ -254,44 +291,100 @@ class Metaagent:
             return True
         else:
             return o in self.agent
-    
+
     def __str__(self):
         return "M"+"".join(map(str,self.agent))
-    
+
     def __repr__(self):
         return str(self)
 
-def check_conflit(solution,agentindex,offset=0):
-    conflit = None
-    for timestep,i in enumerate(zip(*solution)):
+class Constraint:
+
+    def __init__(self,agent,where,time,conflit):
+        self.agent = agent
+        self.where = where
+        self.time = time
+        self.state = (where,time)
+        self.conflit = conflit
+
+    def __str__(self):
+        return str(self.agent)
+    def __repr__(self):
+        return str(self)
+
+    def __eq__(self,o):
+        return self.agent == o.agent and self.where == o.where and self.time == o.time
+    def __hash__(self):
+        return hash((self.agent.agent,self.where,self.time))
+
+
+def extender(li,x,m):
+    return (li + ([x]*(m-len(li))))
+
+def check_conflit(node,offset=0):
+    conflit = None,None,None
+    solution = (node.edgelist if offset else node.vertexlist)
+    m = max(len(i) for i in solution)
+    # print(m)
+    aslou = [extender(list(i),frozenset((i[-1],)) if offset else i[-1],m) for i in solution]
+    # print([len(x) for x in aslou])
+    for timestep,i in enumerate(zip(*aslou)):
         allocate={}
         for agent,j in enumerate(i):
             if j not in allocate:
                 allocate[j] = agent
             else:
-                conflit = ((agentindex[allocate[j]],agentindex[agent]),j,timestep+offset)
+                conflit = ((node.agentindex[allocate[j]],node.agentindex[agent]),j,timestep+offset),allocate[j],agent
                 break
-        if conflit:
+        if conflit[0]:
             break
     return conflit
 
 def transpose(v,e):
     return list(zip(*v)),[[frozenset(tuple[i] for tuple in s) for s in e]for i in range(len(list(list(e[0])[0])))]
 
-def macbs(G,start,goal):
+def rstrip(li):
+    to = len(li)
+    while to>1 and li[to-1] == li[to-2]:
+        to -= 1
+    return to
+
+
+def solve(G,q_node,n_node,agent):
+    x = astar(G,agent.start,agent.goal,q_node.end_time(),heuristic=SIC,heuristic_precalculator=reverse_dijkstra,constraint=n_node.con,agent=agent.agent)
+    if x:
+        vl,el = transpose(*x)
+        for idx,j in enumerate(agent.agent):
+            ocost = len(q_node.vertexlist[j])
+            to = rstrip(vl[idx])
+            n_node.vertexlist[j],n_node.edgelist[j] = vl[idx][:to],el[idx][:to]
+            n_node.cost += len(n_node.vertexlist[j])-ocost
+        return True
+    return False
+
+# def print(*arg):pass
+DEBUG = True
+info = {"Render   ":[0.0,0,0.0],"Conflitct":[0.0,0,0.0],"Merge    ":[0.0,0,0.0],"Branch   ":[0.0,0,0.0]}
+infotext = ""
+start_time = 0
+tree = Digraph();tree.attr(rankdir="TB")
+
+def macbs(G,B,start,goal):
+    global info,infotext,start_time,tree
+    if DEBUG:
+        cou = time.time()
+        start_time = cou
+
+
     tree = Digraph();tree.attr(rankdir="TB")
-    
-    agents=[]
-    agentindex={}
-    for i in range(len(start)):
-        agents.append(Metaagent((i,),(start[i],),(goal[i],)))
-        agentindex[i]=agents[-1]
-    
+    CM = np.zeros((len(start),len(start,)))
     OPEN = []
     root = CTNode()
     root.root()
-    for i in agents:
-        x = astar(G,i.start,i.goal,heuristic=SIC,heuristic_precalculator=reverse_dijkstra,constraint={},agent=i.agent)
+    for i in range(len(start)):
+        agent = Metaagent((i,),(start[i],),(goal[i],))
+        root.agentindex[i] = agent
+        x = astar(G,agent.start,agent.goal,True,heuristic=SIC,heuristic_precalculator=reverse_dijkstra,constraint={},agent=agent.agent)
         if x:
             vl,el = transpose(*x)
             root.vertexlist.append(vl[0])
@@ -303,7 +396,13 @@ def macbs(G,start,goal):
     heapq.heappush(OPEN,root)
     tree.node(root.uuid,str(root),shape="box")
 
+    if DEBUG:
+        infotext += "INIT"+str(time.time()-cou)
+        cou=time.time()
+    akame = 0
     while OPEN:
+        if DEBUG:
+            cou=time.time()
         # input(":")
         # # print()
         # # print()
@@ -313,36 +412,102 @@ def macbs(G,start,goal):
         # # for i in OPEN:
         # #     print()
         # #     print(i.__repr__())
-        tree.render("./tree",view=False,format="png",cleanup=True)
+
+        if DEBUG:
+            info["Render   "][0] = time.time()-cou
+            info["Render   "][1]+=1
+            info["Render   "][2]+=info["Render   "][0]
+            cou=time.time()
 
 
         q = heapq.heappop(OPEN)
         q:CTNode
-        conflit = check_conflit(q.vertexlist,agentindex)
+
+        if akame%100 == 0:
+            # print("render")
+            # tree.render("./tree",view=False,format="png",cleanup=True)
+            print(q)
+            akame = 1
+        else:
+            akame+=1
+        conflit,raw0,raw1 = check_conflit(q)
         if not conflit:
-            conflit = check_conflit(q.edgelist,agentindex,1)
+            conflit,raw0,raw1 = check_conflit(q,1)
             if not conflit:
-                return q.vertexlist,root
+                tree.render("./tree",view=False,format="png",cleanup=True)
+                print(q.agentindex)
+                return q.vertexlist,q.cost,root,q.edgelist
+        if DEBUG:
+            info["Conflitct"][0] = time.time()-cou
+            info["Conflitct"][1]+=1
+            info["Conflitct"][2]+=info["Conflitct"][0]
+            cou=time.time()
 
-        for i in q.con
-        
+
+        CM[raw0,raw1]+=1
+        CM[raw1,raw0]+=1
+
+        # print(conflit)
+        # print(conflit[0][0],conflit[0][1],conflit[0][0].shoud_merge(conflit[0][1]))
+        # print(conflit[0][0].conflit,conflit[0][1].conflit)
+        if CM[np.ix_(conflit[0][0].agent,conflit[0][1].agent)].sum()>B:
+            for i in q.con.copy():
+                for j in q.con[i].copy():
+                    if (j.conflit[0][0] in conflit[0][0] or j.conflit[0][0] in conflit[0][1]) and (j.conflit[0][1] in conflit[0][0] or j.conflit[0][1] in conflit[0][1]):
+                        q.con[i].remove(j)
+                if len(q.con[i]) == 0:
+                    q.con.pop(i)
+            new = Metaagent((*conflit[0][0].agent,*conflit[0][1].agent),(*conflit[0][0].start,*conflit[0][1].start),(*conflit[0][0].goal,*conflit[0][1].goal))
+            for j in conflit[0][0].agent:
+                q.agentindex[j] = new
+            for j in conflit[0][1].agent:
+                q.agentindex[j] = new
+
+            if solve(G,q,q,new):
+                heapq.heappush(OPEN,q)
+                ouuid = q.uuid
+                q.uuid = str(uuid.uuid1())
+                tree.node(q.uuid,str(q),shape="box")
+                tree.edge(ouuid,q.uuid,label=f"{conflit[0][0]} X {conflit[0][1]}")
+            if DEBUG:
+                info["Merge    "][0] = time.time()-cou
+                info["Merge    "][1]+=1
+                info["Merge    "][2]+=info["Merge    "][0]
+                cou=time.time()
+            continue
+
         for i in conflit[0]:
-            new = q.branch((i,conflit[1],conflit[2]))
-            x = astar(G,i.start,i.goal,heuristic=SIC,heuristic_precalculator=reverse_dijkstra,constraint=new.con,agent=i.agent)
-            if x:
-                vl,el = transpose(*x)
-                for idx,j in enumerate(i.agent):
-                    new.vertexlist[j],new.edgelist[j] = vl[idx],el[idx]
-                    new.cost += len(new.vertexlist[j])-len(q.vertexlist[j])
-
+            new = q.branch(Constraint(i,conflit[1],conflit[2],conflit))
+            if solve(G,q,new,i):
                 heapq.heappush(OPEN,new)
                 q.children.append(new)
                 tree.node(new.uuid,str(new),shape="box")
-                tree.edge(q.uuid,new.uuid)
-                
-raw,root = macbs(net,start=START,goal=END)
+                tree.edge(q.uuid,new.uuid,label=f"{conflit[0][0]} X {conflit[0][1]}")
+
+        if DEBUG:
+            info["Branch   "][0] = time.time()-cou
+            info["Branch   "][1]+=1
+            info["Branch   "][2]+=info["Branch   "][0]
+            cou=time.time()
+
+
+raw,c,root,ee = macbs(net,1000000000000,start=START,goal=END)
 temp = []
+se = 0
 for i in raw:
-    temp.append(str([x[0] if type(x) == tuple else x for x in i]))
-print("Final Solution:",end="")
+    aka = []
+    for x in i:
+        t = str(x[0] if type(x) == tuple else x)
+        if len(t) == 1:
+            t+=" "
+        aka.append(t)
+    temp.append(aka)
+    se += len(i)-1
+print(f"Final Solution ({c}):",end="")
 print("",*temp,sep="\n\t")
+
+print(info)
+for i in info:
+    infotext+=f"\n{i}:\t{info[i][2]:.4} ||\t{info[i][2]/(info[i][1]+1e-6):.4} ||\t{info[i][0]:.4} ||\t{info[i][1]}"
+infotext += f"\nTotal: {time.time()-start_time}"
+print(infotext)
