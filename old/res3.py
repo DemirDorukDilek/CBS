@@ -1,0 +1,127 @@
+
+
+import numpy as np
+import matplotlib as plt
+import scipy
+S = 4
+N = 2 * S - 1
+
+def compute_As(T):
+    f = scipy.special.factorial(np.arange(S)).T
+    i = np.arange(S)[:, None]
+    j = np.arange(S)[None, :]
+    jmi = j - i
+    njmi = jmi.copy()
+    njmi[njmi < 0] = 0
+    j_fact = scipy.special.factorial(j)
+
+    O = np.zeros((S, S))
+    E = np.eye(S)*f
+    U = np.eye(S)*1/f
+    F = np.zeros((S, S))
+    G = scipy.special.factorial(S+j)/scipy.special.factorial(S+j-i)*np.power(T,S+j-i)
+
+    cond = i<=j
+    F[cond] = np.where(cond,j_fact,0)[cond]/np.where(cond,scipy.special.factorial(j-i),0)[cond]*np.where(cond,np.power(T,njmi),0)[cond]
+
+    # def SUM(i,j):
+    #     i+=1
+    #     j+=1
+    #     v = 0
+    #     w = 0
+    #     for k in range(S-max(i,j)+1):
+    #         temp = scipy.special.comb(2*S-k-j-1,S-1,exact=False)
+    #         v+=((-1)**k)*scipy.special.comb(S,k+i,exact=False)*temp
+    #         w+=scipy.special.comb(S-k-1,i-1,exact=False)*temp
+    #     # return np.array([v,w])
+    #     return v,w
+
+    # # np.array([i,j])
+    # v,w = np.vectorize(SUM)(i,j)
+    # # V = v/(j_fact*np.where(i%2, 1 ,-1))
+    # # W = w/(j_fact*np.where((i+j)%2, -1 ,1))
+
+    I = np.broadcast_to(i+1, (S, S))
+    J = np.broadcast_to(j+1, (S, S))
+    K = np.arange(S + 1)[None, None, :]
+    upper = S - np.maximum(I, J)
+    mask_k = (K <= upper[..., None])
+    n1 = I[..., None] + K
+    n2 = (2*S - J[..., None] - K - 1)
+
+    mask = (mask_k & (n1 >= 0) & (n1 <= S) & (n2 >= 0) & (n2 >= (S-1)))
+    term = ((-1.0) ** K) * scipy.special.comb(S, n1, exact=False) * scipy.special.comb(n2, S-1, exact=False)
+    v = np.sum(np.where(mask, term, 0.0), axis=-1)
+    V = v/(j_fact*np.where(i%2, 1 ,-1)*np.power(T,S-J+I))
+
+
+    n1 = I[..., None] - 1
+    mask = (mask_k & (n1 >= 0) & (n1 <= S) & (n2 >= 0) & (n2 >= (S-1)))
+    term = scipy.special.comb(S-K-1, n1, exact=False) * scipy.special.comb(n2, S-1, exact=False)
+    w = np.sum(np.where(mask, term, 0.0), axis=-1)
+    W = w/(j_fact*np.where((i+j)%2, -1 ,1)*np.power(T,S-J+I))
+
+    Af = np.block([[E, O],[F,G]])
+    Ab = np.block([[U, O],[V,W]])
+    return Af,Ab
+
+def compute_Q(T):
+    i = (np.arange(N+1-S)+S)[:, None]
+    j = (np.arange(N+1-S)+S)[None , :]
+    temp = i+j-2*S+1
+    Qbr = np.power(T,temp)/temp*scipy.special.factorial(i)/scipy.special.factorial(i-4)*scipy.special.factorial(j)/scipy.special.factorial(j-4)
+    Q = np.zeros((N+1,N+1))
+    Q[N-S+1:,N-S+1:] = Qbr
+    return Q
+
+Ts = [0.5,1.0,2.0,5.0]
+D = np.zeros((S-1,S))
+D[:,1:] = np.eye(S-1)
+M = len(Ts)-1
+
+Afs,Abs,Qs,Hs = [],[],[],[]
+
+GAMAs,LAMBDAs,PHIs,OMEGAs=[],[],[],[]
+alphas,betas,gamas=[],[],[]
+oldOMEGA = None
+
+Mm = np.zeros(((S-1)*(M-1),(S-1)*(M-1)))
+for loop,T in enumerate(Ts):
+    Af,Ab = compute_As(T)
+    Q = compute_Q(T)
+    H = Ab.T*Q
+    Afs.append(Af)
+    Abs.append(Ab)
+    Qs.append(Q)
+    Hs.append(H)
+    
+    GAMA = H[:S,:S]
+    LAMBDA = H[:S,S:]
+    PHI = H[S:,:S]
+    OMEGA = H[S:,S:]
+    
+    GAMAs.append(GAMA)
+    LAMBDAs.append(LAMBDA)
+    PHIs.append(PHI)
+    OMEGAs.append(OMEGA)
+    
+    if loop != 0:
+        alpha = D*(oldOMEGA+GAMA)*D.T
+        Mm[(S-1)*(loop-1):(S-1)*(loop) , (S-1)*(loop-1):(S-1)*(loop)] = alpha
+    
+    if loop != M-1:
+        beta = D*LAMBDA*D.T
+        Mm[(S-1)*(loop-1):(S-1)*(loop) , (S-1)*(loop):(S-1)*(loop+1)] = beta
+        
+        gama = D*PHI*D.T
+        Mm[(S-1)*(loop):(S-1)*(loop+1) , (S-1)*(loop-1):(S-1)*(loop)] = gama
+    oldOMEGA = OMEGA
+
+
+
+
+AF = scipy.linalg.block_diag(*Afs)
+AB = scipy.linalg.block_diag(*Abs)
+Qepsilon = scipy.linalg.block_diag(*Qs)
+Hepsilon = scipy.linalg.block_diag(*Hs)
+Hepsilon
