@@ -9,6 +9,8 @@ import time
 import imageio.v3 as iio
 import pathlib
 import json
+import sys
+
 INF = float("inf")
 
 def download_map(url,dst:pathlib.Path="mapp",senario = 1,flush=True):
@@ -583,6 +585,8 @@ def test():
     glb.end_time = time.time()
     log(sol,cost,lowerbound)
 
+
+
 class glb:
     infotime = {}
     infonode = {"hle":0,"merge":0,"lle":0,"llc":0,"hlc":1}
@@ -598,7 +602,7 @@ class glb:
     perloop = 50
     logSave = True
 
-    B = INF
+    B = INF if sys.argv[3] else int(sys.argv[3])
 
 class SEN:
     G = None;start = None;goal = None;dst = pathlib.Path("mapp");grid=True
@@ -606,9 +610,9 @@ class SEN:
     flush = False
 
     # URL = "https://movingai.com/benchmarks/mapf/brc202d.map.zip"
-    URL = "https://movingai.com/benchmarks/mapf/orz900d.map.zip"
+    URL = sys.argv[1]
     # URL = "graph.json"
-    num = 10
+    num = int(sys.argv[2])
 
 pretest()
 try:
