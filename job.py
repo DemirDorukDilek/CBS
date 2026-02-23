@@ -10,6 +10,7 @@ import imageio.v3 as iio
 import pathlib
 import json
 import sys
+import signal
 
 INF = float("inf")
 
@@ -542,6 +543,7 @@ def macbs(G,B,start,goal):
 
 
 def log(sol,cost,lb):
+    return
     if sol:
         temp = len(str(list(SEN.G.nodes)[0]))
         print(f"\nFinal Solution ({cost}) ({lb}):\n=====================================================================================",end="")
@@ -568,6 +570,7 @@ def pretest():
         set_sen()
 
 def save_out(stat):
+
     if not glb.logSave:return
     if not os.path.exists(glb.logsave):
         with open(glb.logsave,"w",encoding="utf-8") as f:
@@ -602,7 +605,7 @@ class glb:
     perloop = 50
     logSave = True
 
-    B = INF if sys.argv[3] else int(sys.argv[3])
+    B = INF if sys.argv[3] == "INF" else int(sys.argv[3])
 
 class SEN:
     G = None;start = None;goal = None;dst = pathlib.Path("mapp");grid=True
@@ -614,7 +617,15 @@ class SEN:
     # URL = "graph.json"
     num = int(sys.argv[2])
 
+def handle_sigterm(_signum, _frame):
+    glb.end_time = time.time()
+    print("IIIIIIIIIIIIIIII KIS KIS KIS IIIIIIIIIIIIIIIIIIIIIIIIIII")
+    log(False, False, False)
+    save_out(False)
+    os._exit(0)
+
 pretest()
+signal.signal(signal.SIGTERM, handle_sigterm)
 try:
     print(SEN.start)
     print(SEN.goal)
