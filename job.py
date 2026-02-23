@@ -545,7 +545,7 @@ def log(sol,cost,lb):
     if sol:
         temp = len(str(list(SEN.G.nodes)[0]))
         print(f"\nFinal Solution ({cost}) ({lb}):\n=====================================================================================",end="")
-        print("",*[[str(x)+(" "*(temp-len(str(x)))) for x in i] for i in sol],sep="\n")
+        # print("",*[[str(x)+(" "*(temp-len(str(x)))) for x in i] for i in sol],sep="\n")
 
 
     print("\nTimes:\n=====================================================================================")
