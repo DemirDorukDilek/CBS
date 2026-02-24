@@ -11,6 +11,7 @@ import pathlib
 import json
 import sys
 import signal
+import gc
 
 INF = float("inf")
 
@@ -543,6 +544,7 @@ def macbs(G,B,start,goal):
 
 
 def log(sol,cost,lb):
+    return
     if sol:
         temp = len(str(list(SEN.G.nodes)[0]))
         print(f"\nFinal Solution ({cost}) ({lb}):\n=====================================================================================",end="")
@@ -604,7 +606,7 @@ class glb:
     perloop = 50
     logSave = True
 
-    B = INF if sys.argv[3] == "INF" else int(sys.argv[3])
+    B = None
 
 class SEN:
     G = None;start = None;goal = None;dst = pathlib.Path("mapp");grid=True
@@ -612,9 +614,8 @@ class SEN:
     flush = False
 
     # URL = "https://movingai.com/benchmarks/mapf/brc202d.map.zip"
-    URL = sys.argv[1]
     # URL = "graph.json"
-    num = int(sys.argv[2])
+    num = None
 
 def handle_sigterm(_signum, _frame):
     glb.end_time = time.time()
@@ -625,14 +626,31 @@ def handle_sigterm(_signum, _frame):
 
 pretest()
 signal.signal(signal.SIGTERM, handle_sigterm)
-try:
-    print(SEN.start)
-    print(SEN.goal)
-    test()
-    save_out(True)
-except BaseException as e:
-    glb.end_time = time.time()
-    log(False,False,False)
-    # glb.tree.render("tree",view=False,format="png",cleanup=True)
-    save_out(False)
-    raise e
+
+for B in [10, 100, "INF"]:
+    for num in [10,15,20,25]:
+        for i in range(25):
+            del glb.tree,glb.infonode,glb.infotime,glb.DIJKSTRA_CACHE
+            glb.tree = Digraph(); tree.attr(rankdir="TB")
+            glb.infonode = {"hle":0,"merge":0,"lle":0,"llc":0,"hlc":1}
+            glb.infotime = {}
+            glb.DIJKSTRA_CACHE = None
+            gc.collect()
+            start_time = 0
+            end_time = None
+            cost = None
+            glb.B = B
+            SEN = num
+
+
+            try:
+                print(SEN.start)
+                print(SEN.goal)
+                test()
+                save_out(True)
+            except BaseException as e:
+                glb.end_time = time.time()
+                log(False,False,False)
+                # glb.tree.render("tree",view=False,format="png",cleanup=True)
+                save_out(False)
+                raise e
